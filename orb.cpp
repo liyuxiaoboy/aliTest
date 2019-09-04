@@ -9,6 +9,20 @@ using namespace std;
 
 int main()
 {
+
+    // 匹配上的特征点的个数
+    const int N = mvMatches12.size();
+
+    // Indices for minimum set selection
+    // 新建一个容器vAllIndices，生成0到N-1的数作为特征点的索引
+    vector<size_t> vAllIndices;
+    vAllIndices.reserve(N);
+    vector<size_t> vAvailableIndices;
+
+    for(int i=0; i<N; i++)
+    {
+        vAllIndices.push_back(i);
+    }
      // Generate sets of 8 points for each RANSAC iteration
     // 步骤2：在所有匹配特征点对中随机选择8对匹配特征点为一组，共选择mMaxIterations组
     // 用于FindHomography和FindFundamental求解
@@ -284,4 +298,67 @@ float CheckHomography(const cv::Mat &H21, const cv::Mat &H12, vector<bool> &vbMa
     }
 
     return score;
+}
+
+/**
+ * ＠brief 归一化特征点到同一尺度（作为normalize DLT的输入）
+ *
+ * [x' y' 1]' = T * [x y 1]' \n
+ * 归一化后x', y'的均值为0，sum(abs(x_i'-0))=1，sum(abs((y_i'-0))=1
+ * 
+ * @param vKeys             特征点在图像上的坐标
+ * @param vNormalizedPoints 特征点归一化后的坐标
+ * @param T                 将特征点归一化的矩阵
+ */
+void Initializer::Normalize(const vector<cv::KeyPoint> &vKeys, vector<cv::Point2f> &vNormalizedPoints, cv::Mat &T)
+{
+    float meanX = 0;
+    float meanY = 0;
+    const int N = vKeys.size();
+
+    vNormalizedPoints.resize(N);
+
+    for(int i=0; i<N; i++)
+    {
+        meanX += vKeys[i].pt.x;
+        meanY += vKeys[i].pt.y;
+    }
+
+    meanX = meanX/N;
+    meanY = meanY/N;
+
+    float meanDevX = 0;
+    float meanDevY = 0;
+
+    // 将所有vKeys点减去中心坐标，使x坐标和y坐标均值分别为0
+    for(int i=0; i<N; i++)
+    {
+        vNormalizedPoints[i].x = vKeys[i].pt.x - meanX;
+        vNormalizedPoints[i].y = vKeys[i].pt.y - meanY;
+
+        meanDevX += fabs(vNormalizedPoints[i].x);
+        meanDevY += fabs(vNormalizedPoints[i].y);
+    }
+
+    meanDevX = meanDevX/N;
+    meanDevY = meanDevY/N;
+
+    float sX = 1.0/meanDevX;
+    float sY = 1.0/meanDevY;
+
+    // 将x坐标和y坐标分别进行尺度缩放，使得x坐标和y坐标的一阶绝对矩分别为1
+    for(int i=0; i<N; i++)
+    {
+        vNormalizedPoints[i].x = vNormalizedPoints[i].x * sX;
+        vNormalizedPoints[i].y = vNormalizedPoints[i].y * sY;
+    }
+
+    // |sX  0  -meanx*sX|
+    // |0   sY -meany*sY|
+    // |0   0      1    |
+    T = cv::Mat::eye(3,3,CV_32F);
+    T.at<float>(0,0) = sX;
+    T.at<float>(1,1) = sY;
+    T.at<float>(0,2) = -meanX*sX;
+    T.at<float>(1,2) = -meanY*sY;
 }
